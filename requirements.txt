@@ -1,1 +1,3 @@
 frappe
+git-url-parse
+requests

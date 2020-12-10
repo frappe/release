@@ -1,0 +1,147 @@
+{
+ "actions": [],
+ "creation": "2020-12-08 16:06:04.209652",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "status",
+  "section_break_2",
+  "git_url",
+  "stable_branch",
+  "column_break_4",
+  "release_type",
+  "pre_release_branch",
+  "release_information_section",
+  "tag_name",
+  "release_name",
+  "release_checklist_section",
+  "check_ready_for_release",
+  "check_post_on_discuss",
+  "small_text_13",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "git_url",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Git URL",
+   "read_only_depends_on": "doc.status != \"Draft\"",
+   "reqd": 1
+  },
+  {
+   "fieldname": "stable_branch",
+   "fieldtype": "Data",
+   "label": "Stable Branch",
+   "read_only_depends_on": "doc.status != \"Draft\"",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pre_release_branch",
+   "fieldtype": "Data",
+   "label": "Pre Release Branch",
+   "read_only_depends_on": "doc.status != \"Draft\"",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Release",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Status",
+   "options": "Draft\nProcessing PRs\nPre Release Testing\nReady\nReleased",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "check_ready_for_release",
+   "fieldtype": "Check",
+   "label": "Ready For Release"
+  },
+  {
+   "default": "0",
+   "fieldname": "check_post_on_discuss",
+   "fieldtype": "Check",
+   "label": "Discuss Post Ready"
+  },
+  {
+   "fieldname": "tag_name",
+   "fieldtype": "Data",
+   "label": "Tag Name"
+  },
+  {
+   "fieldname": "release_name",
+   "fieldtype": "Data",
+   "label": "Release Name"
+  },
+  {
+   "default": "Beta",
+   "fieldname": "release_type",
+   "fieldtype": "Select",
+   "label": "Release Type",
+   "options": "Major\nMinor\nPatch\nBeta"
+  },
+  {
+   "fieldname": "release_checklist_section",
+   "fieldtype": "Section Break",
+   "label": "Release Checklist"
+  },
+  {
+   "fieldname": "release_information_section",
+   "fieldtype": "Section Break",
+   "label": "Release Information"
+  },
+  {
+   "fieldname": "column_break_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Along with this, checks are made for \n1. any open PRs on the stable branch\n2. any PRs with failed tests  ",
+   "fieldname": "small_text_13",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_2",
+   "fieldtype": "Section Break",
+   "hide_border": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2020-12-10 13:27:03.648825",
+ "modified_by": "Administrator",
+ "module": "Release",
+ "name": "Release",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}
