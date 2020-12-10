@@ -2,6 +2,21 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('Release', {
+	setup: function(frm) {
+		// first get them to behave as select/link fields with the dropdown?
+		frm.fields_dict["pre_release_branch"].get_query = function(doc, dt, dn) {
+			return {
+				query: "release.api.get_branch",
+				filters: {"git_url": doc.git_url}
+			}
+		};
+		frm.fields_dict["stable_branch"].get_query = function(doc, dt, dn) {
+			return {
+				query: "release.api.get_branch",
+				filters: {"git_url": doc.git_url}
+			}
+		};
+	},
 	refresh: function(frm) {
 		frm.add_custom_button(
 			"Process PRs",
@@ -25,5 +40,9 @@ frappe.ui.form.on('Release', {
 			},
 			"Actions"
 		);
+		frappe.realtime.on("release", function (r) {
+			console.log(r);
+			frm.reload_doc();
+		});
 	}
 });

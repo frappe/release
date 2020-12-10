@@ -8,10 +8,6 @@ frappe.ui.form.on("Pull Request", {
 				window.open(frm.doc.pull_request_link, "_blank")
 			);
 		}
-		frappe.realtime.on("release", function (r) {
-			console.log(r);
-			frm.reload_doc();
-		});
 		setTimeout(function() {
 			const preview = frm.get_field("pull_request_description").preview_toggle_btn;
 			if (preview.text() === "Preview") {

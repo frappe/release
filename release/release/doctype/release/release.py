@@ -2,17 +2,16 @@
 # Copyright (c) 2020, Frappe Technologies Pvt Ltd and contributors
 # For license information, please see license.txt
 
-import frappe
-from frappe.model.document import Document
-import git
-import os
-from giturlparse import parse
 import datetime
-import re
-import requests
 import functools
-import datetime
+import os
+import re
 
+import frappe
+import git
+import requests
+from frappe.model.document import Document
+from giturlparse import parse
 from semantic_version import Version
 
 remote = "origin"
@@ -32,12 +31,14 @@ class Release(Document):
 	def validate(self):
 		if not self.parsed.protocol:
 			frappe.throw(f"Missing protocal in {self.git_url}")
-		if not (self.tag_name and self.release_name):
-			self.set_release_info()
+		if not self.is_new():
+			if not (self.tag_name and self.release_name):
+				self.set_release_info()
 
 	def after_insert(self):
-		self.clone_repo()
-		self.fetch_remotes()
+		frappe.enqueue_doc(
+			self.doctype, self.name, "_setup_local_clone", queue="long", timeout=1200
+		)
 
 	def on_update(self):
 		self.refresh_doc_on_desk()
@@ -139,6 +140,13 @@ class Release(Document):
 	def refresh_doc_on_desk(self):
 		frappe.publish_realtime("release", "refresh", self.name)
 
+	def _setup_local_clone(self):
+		if not os.path.exists(self.local_clone):
+			self.clone_repo()
+		self.fetch_remotes()
+		title_with_branch = f"{self.name} - {self.stable_branch.replace('-', ' ').title()}"
+		frappe.rename_doc(self.doctype, self.name, title_with_branch)
+
 	def _process_pull_requests(self):
 		for number, data in self.titles.items():
 			try:
@@ -150,6 +158,8 @@ class Release(Document):
 				pr.insert()
 			except frappe.DuplicateEntryError:
 				pass
+			except Exception:
+				frappe.logger("release").info(frappe.get_traceback())
 
 		self.db_set("status", "Pre Release Testing")
 		self.refresh_doc_on_desk()

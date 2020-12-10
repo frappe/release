@@ -4,13 +4,10 @@
 
 import frappe
 from frappe.model.document import Document
+from giturlparse import parse
 
 
 class PullRequest(Document):
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self._setup_pull_request_info()
-
 	def before_insert(self):
 		existing_pull_request = frappe.db.exists(
 			self.doctype, {"pull_request_link": self.pull_request_link, "docstatus": ("!=", 2)}
@@ -35,8 +32,6 @@ class PullRequest(Document):
 			frappe.db.set_value("Release", self.release, "status", "Ready")
 
 	def _setup_pull_request_info(self):
-		from giturlparse import parse
-
 		pr_url = parse(self.pull_request_link)
 		repo_url = parse(pr_url.href.rstrip(pr_url.pathname))
 
@@ -45,12 +40,15 @@ class PullRequest(Document):
 		self._org = repo_url.owner
 
 	def update_missing_description(self):
+		self._setup_pull_request_info()
+
 		if self._pr_number and self._repo and self._org:
 			self.pull_request_description = self.retrieve_pull_request_body()
 
 	def retrieve_pull_request_body(self):
 		import requests
 
+		self._setup_pull_request_info()
 		res = requests.get(
 			f"https://api.github.com/repos/{self._org}/{self._repo}/pulls/{self._pr_number}"
 		)
