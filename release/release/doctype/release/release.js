@@ -40,6 +40,18 @@ frappe.ui.form.on('Release', {
 			},
 			"Actions"
 		);
+		frm.add_custom_button(
+			"Raise PR For Release",
+			() => {
+				frappe.confirm(`This action will generate a bump commit on branch <b>${frm.doc.pre_release_branch}</b> and raise a PR to <b>${frm.doc.stable_branch}</b>`,
+				function() {
+					frm.call("raise_pr_for_release").then(
+						frm.reload_doc()
+					);
+				});
+			},
+			"Actions"
+		);
 		frappe.realtime.on("release", function (r) {
 			console.log(r);
 			frm.reload_doc();

@@ -1,3 +1,4 @@
 frappe
 git-url-parse
 requests
+PyGithub

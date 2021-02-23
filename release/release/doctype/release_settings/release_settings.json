@@ -5,25 +5,19 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "github_auth_token",
-  "clones_directory"
+  "github_auth_token"
  ],
  "fields": [
   {
    "fieldname": "github_auth_token",
    "fieldtype": "Password",
    "label": "GitHub Auth Token"
-  },
-  {
-   "fieldname": "clones_directory",
-   "fieldtype": "Data",
-   "label": "Clones Directory"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2020-12-08 17:52:30.515630",
+ "modified": "2021-02-24 01:36:02.071660",
  "modified_by": "Administrator",
  "module": "Release",
  "name": "Release Settings",

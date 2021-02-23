@@ -4,6 +4,7 @@
 
 import datetime
 import functools
+import json
 import os
 import re
 
@@ -47,8 +48,7 @@ class Release(Document):
 
 	def before_submit(self):
 		if not (
-			self.pending_pull_requests_to_stable
-			and self.passed_manual_testing
+			self.passed_manual_testing
 			and self.check_post_on_discuss
 			and self.check_ready_for_release
 		):
@@ -56,48 +56,118 @@ class Release(Document):
 
 		if not (self.release_name and self.tag_name):
 			frappe.throw("Update Release Information before Submitting")
+
+		if not (self.raised_pr_for_release and self.bump_commit_created):
+			frappe.throw("Run 'Raise PR for Release' before submitting this release")
+
 		self.status = "Ready"
 
 	def on_submit(self):
-		self.create_bump_commit()
 		self.create_draft_release()
 
-	def create_bump_commit(self):
-		frappe.throw("Incomplete")
-		# ref: https://docs.github.com/en/rest/reference/git
-		# simplified ref: http://www.levibotelho.com/development/commit-a-file-with-the-github-api/
-		tree = ""
+	def raise_pr_for_release(self):
+		self.create_bump_commit_on_pre_release()
+		self.merge_pre_release_into_stable()
 
-		commit_response = requests.post(
-			f"https://api.github.com/repos/{self.parsed.owner}/{self.parsed.name}/git/commits",
+	def merge_pre_release_into_stable(self):
+		if self.raised_pr_for_release:
+			return
+
+		data = {
+			"title": f"chore: Merge {self.pre_release_branch} into {self.stable_branch}",
+			"head": self.pre_release_branch,
+			"base": self.stable_branch,
+			"maintainer_can_modify": True,
+		}
+
+		response = requests.post(
+			f"https://api.github.com/repos/{self.parsed.owner}/{self.parsed.name}/pulls",
 			headers={
 				"Authorization": f"token {self.settings.get_password('github_auth_token')}",
 				"accept": "application/vnd.github.v3+json",
 			},
-			data={
-				"message": f"chore: Bump to v{self.tag_name}",
-				"tree": tree,
-				"author": {
-					"name": frappe.utils.get_fullname(frappe.session.user),
-					"email": frappe.session.user,
-					"date": frappe.utils.now(),
-				},
-			},
+			data=json.dumps(data),
 		)
-		if not commit_response.ok:
-			commit_response.raise_for_status()
+		self._response = response
+		if response.ok:
+			frappe.msgprint(f"PR raised: {response.json()['html_url']}")
+		else:
+			try:
+				message = response.json()["message"]
+				error = (
+					f': {response.json()["errors"][0]["message"]}'
+					if response.json().get("errors")
+					else ""
+				)
+			except:
+				response.raise_for_status()
+			frappe.throw(f"{message}{error}")
+
+		self.db_set(
+			"raised_pr_for_release", True, update_modified=False, notify=True, commit=True,
+		)
+
+	def create_bump_commit_on_pre_release(self):
+		if self.bump_commit_created:
+			return
+
+		from github import InputGitAuthor
+
+		file_path = f"{self.parsed.name}/__init__.py"
+
+		repo = self.GitHub.get_repo(self.parsed.pathname.lstrip("/"))
+		file = repo.get_contents(file_path, ref=self.pre_release_branch)
+		old_data = file.decoded_content.decode("utf-8")
+		data = re.sub("__version__ = .*", f"__version__ = '{self.tag_name}'", old_data)
+
+		author = InputGitAuthor(
+			frappe.utils.get_fullname(frappe.session.user), frappe.session.user,
+		)
+		message = f"chore: Bump to v{self.tag_name}"
+		contents = repo.get_contents(file_path, ref=self.pre_release_branch)
+
+		repo.update_file(
+			path=contents.path,
+			message=message,
+			content=data,
+			sha=contents.sha,
+			branch=self.pre_release_branch,
+			author=author,
+		)
 
 		self.db_set(
 			"bump_commit_created", True, update_modified=False, notify=True, commit=True
 		)
 
 	def create_draft_release(self):
+		if not self.pending_pull_requests_to_stable:
+			frappe.throw(
+				"There are open PRs to stable branch. Get them merged before submitting release!"
+			)
+
+		if not self.pre_release_merged_into_stable_branch:
+			frappe.throw(
+				"Check the field `Pre Release Merged Into Stable Branch` before you try"
+				" to create a draft release!"
+			)
+
 		alert_message = (
 			f"#ALERT: Update the branch {self.stable_branch} with a bump commit"
 			f" to update its' {self.parsed.name}.__version__ before publishing"
 			" this !\n"
 			if not self.bump_commit_created
 			else ""
+		)
+		data = json.dumps(
+			{
+				"tag_name": f"v{self.tag_name}",
+				"target_commitish": self.stable_branch,
+				"name": self.release_name,
+				"body": alert_message
+				+ f"# Version {self.tag_name} Release Notes\n# Fixes &"
+				f" Enhancements\n# Features\n{self.get_summary()}",
+				"draft": True,
+			}
 		)
 
 		release_request = requests.post(
@@ -106,14 +176,7 @@ class Release(Document):
 				"Authorization": f"token {self.settings.get_password('github_auth_token')}",
 				"accept": "application/vnd.github.v3+json",
 			},
-			data={
-				"tag_name": f"v{self.tag_name}",
-				"name": self.release_name,
-				"body": alert_message
-				+ f"# Version {self.tag_name} Release Notes\n# Fixes &"
-				f" Enhancements\n# Features\n{self.get_summary()}",
-				"draft": True,
-			},
+			data=data,
 		)
 		if release_request.ok:
 			frappe.msgprint(
@@ -122,7 +185,16 @@ class Release(Document):
 				)
 			)
 		else:
-			release_request.raise_for_status()
+			response = release_request
+			self._response = response
+
+			try:
+				message = response.json()["message"]
+				error = response.json()["errors"][0]["message"]
+			except:
+				response.raise_for_status()
+
+			frappe.throw(f"{message}: {error}")
 
 	def before_update_after_submit(self):
 		if self.status == "Released":
@@ -219,6 +291,15 @@ class Release(Document):
 
 		self.db_set("status", "Pre Release Testing")
 		self.refresh_doc_on_desk()
+
+	@property
+	def GitHub(self):
+		if not getattr(self, "_github_connection", None):
+			from github import Github
+
+			self._github_connection = Github(self.settings.get_password("github_auth_token"))
+
+		return self._github_connection
 
 	@property
 	@functools.lru_cache()

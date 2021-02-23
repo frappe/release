@@ -20,6 +20,8 @@
   "check_ready_for_release",
   "check_post_on_discuss",
   "bump_commit_created",
+  "raised_pr_for_release",
+  "pre_release_merged_into_stable_branch",
   "small_text_13",
   "amended_from"
  ],
@@ -126,12 +128,25 @@
    "fieldtype": "Check",
    "label": "Bump Commit Created",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "pre_release_merged_into_stable_branch",
+   "fieldtype": "Check",
+   "label": "Pre Release Merged Into Stable Branch"
+  },
+  {
+   "default": "0",
+   "fieldname": "raised_pr_for_release",
+   "fieldtype": "Check",
+   "label": "Raised PR For Release",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2021-02-23 23:40:25.835805",
+ "modified": "2021-02-24 02:32:44.062486",
  "modified_by": "Administrator",
  "module": "Release",
  "name": "Release",
