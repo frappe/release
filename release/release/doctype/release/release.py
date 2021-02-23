@@ -8,7 +8,6 @@ import os
 import re
 
 import frappe
-import git
 import requests
 from frappe.model.document import Document
 from giturlparse import parse
@@ -20,25 +19,28 @@ as_md = True  # changes titles, export formats
 skip_backports = False
 backport_identifiers = ("mergify/bp", "(bp #")
 
+# todo: make git_url, stable and pre release branch set only once -- maybe not...
+
 
 class Release(Document):
 	def autoname(self):
 		now = datetime.datetime.now()
-		self.name = (
+		release_title = (
 			f"{now.strftime('%B')} {now.strftime('%Y')}: {self.parsed.owner}/{self.parsed.name}"
 		)
+		self.name = f"{release_title} - {self.stable_branch.replace('-', ' ').title()}"
 
 	def validate(self):
-		if not self.parsed.protocol:
-			frappe.throw(f"Missing protocal in {self.git_url}")
-		if not self.is_new():
-			if not (self.tag_name and self.release_name):
-				self.set_release_info()
+		if self.has_value_changed("git_url"):
+			self.validate_git_url()
 
-	def after_insert(self):
-		frappe.enqueue_doc(
-			self.doctype, self.name, "_setup_local_clone", queue="long", timeout=1200
-		)
+		if self.has_value_changed("stable_branch") or self.has_value_changed(
+			"pre_release_branch"
+		):
+			self.validate_github_branches()
+
+		if not self.is_new() and not (self.tag_name and self.release_name):
+			self.set_release_info()
 
 	def on_update(self):
 		self.refresh_doc_on_desk()
@@ -57,7 +59,47 @@ class Release(Document):
 		self.status = "Ready"
 
 	def on_submit(self):
-		# create a github draft release!!!
+		self.create_bump_commit()
+		self.create_draft_release()
+
+	def create_bump_commit(self):
+		frappe.throw("Incomplete")
+		# ref: https://docs.github.com/en/rest/reference/git
+		# simplified ref: http://www.levibotelho.com/development/commit-a-file-with-the-github-api/
+		tree = ""
+
+		commit_response = requests.post(
+			f"https://api.github.com/repos/{self.parsed.owner}/{self.parsed.name}/git/commits",
+			headers={
+				"Authorization": f"token {self.settings.get_password('github_auth_token')}",
+				"accept": "application/vnd.github.v3+json",
+			},
+			data={
+				"message": f"chore: Bump to v{self.tag_name}",
+				"tree": tree,
+				"author": {
+					"name": frappe.utils.get_fullname(frappe.session.user),
+					"email": frappe.session.user,
+					"date": frappe.utils.now(),
+				},
+			},
+		)
+		if not commit_response.ok:
+			commit_response.raise_for_status()
+
+		self.db_set(
+			"bump_commit_created", True, update_modified=False, notify=True, commit=True
+		)
+
+	def create_draft_release(self):
+		alert_message = (
+			f"#ALERT: Update the branch {self.stable_branch} with a bump commit"
+			f" to update its' {self.parsed.name}.__version__ before publishing"
+			" this !\n"
+			if not self.bump_commit_created
+			else ""
+		)
+
 		release_request = requests.post(
 			f"https://api.github.com/repos/{self.parsed.owner}/{self.parsed.name}/releases",
 			headers={
@@ -65,14 +107,11 @@ class Release(Document):
 				"accept": "application/vnd.github.v3+json",
 			},
 			data={
-				"tag_name": self.tag_name,
+				"tag_name": f"v{self.tag_name}",
 				"name": self.release_name,
-				"body": (
-					f"#ALERT: Update the branch {self.stable_branch} with a bump commit"
-					f" to update its' {self.parsed.name}.__version__ before publishing"
-					f" this !\n# Version {self.tag_name} Release Notes\n# Fixes &"
-					f" Enhancements\n# Features\n{self.get_summary()}"
-				),
+				"body": alert_message
+				+ f"# Version {self.tag_name} Release Notes\n# Fixes &"
+				f" Enhancements\n# Features\n{self.get_summary()}",
 				"draft": True,
 			},
 		)
@@ -90,11 +129,25 @@ class Release(Document):
 			now = datetime.datetime.now()
 			self.name = f"{self.name} on {now.strftime('%d-%m-%Y')}"
 
-	def on_trash(self):
-		if os.path.exists(self.local_clone):
-			import shutil
+	def validate_git_url(self):
+		if not self.parsed.protocol:
+			frappe.throw(f"Missing protocal in {self.git_url}")
 
-			shutil.rmtree(self.local_clone)
+		if self.parsed.resource != "github.com":
+			frappe.throw("Release only supports GitHub at this point", exc=NotImplementedError)
+
+	def validate_github_branches(self):
+		auth_token = self.settings.get_password("github_auth_token")
+		for branch in [self.stable_branch, self.pre_release_branch]:
+			response = requests.head(
+				f"https://api.github.com/repos/{self.parsed.owner}/{self.parsed.name}/branches/{branch}",
+				headers={
+					"Authorization": f"token {auth_token}",
+					"accept": "application/vnd.github.v3+json",
+				},
+			)
+			if not response.ok:
+				frappe.throw(f"Branch {branch} does not exist on {self.git_url}")
 
 	def reset_release_info(self):
 		self.set_release_info()
@@ -103,20 +156,16 @@ class Release(Document):
 	def process_pull_requests(self):
 		self.status = "Processing PRs"
 		self.save()
-
 		frappe.enqueue_doc(
 			self.doctype, self.name, "_process_pull_requests", queue="long", timeout=1200
 		)
 
 	def set_release_info(self):
-		self.fetch_remotes()
-		self.repo.checkout(self.stable_branch)
-		self.repo.pull()
 		self.set_tag_name()
 		self.release_name = f"Release {self.tag_name}"
 
 	def set_tag_name(self):
-		latest_tag_on_stable = Version(self.repo.describe(tags=True, abbrev=0).lstrip("v"))
+		latest_tag_on_stable = Version(self.get_latest_tag_on_stable().lstrip("v"))
 		default_bump_type = {
 			"Major": "next_major",
 			"Minor": "next_minor",
@@ -137,15 +186,22 @@ class Release(Document):
 
 		self.tag_name = str(bump_funct())
 
+	def get_latest_tag_on_stable(self):
+		refs_matches = [
+			x for x in self.matching_refs if x["ref"] == f"refs/heads/{self.stable_branch}"
+		]
+
+		if refs_matches:
+			object_sha = refs_matches[0]["object"]["sha"]
+			tags_matches = [x for x in self.tags if x["commit"]["sha"] == object_sha]
+
+			if tags_matches:
+				return tags_matches[0]["name"]
+
+		return ""
+
 	def refresh_doc_on_desk(self):
 		frappe.publish_realtime("release", "refresh", self.name)
-
-	def _setup_local_clone(self):
-		if not os.path.exists(self.local_clone):
-			self.clone_repo()
-		self.fetch_remotes()
-		title_with_branch = f"{self.name} - {self.stable_branch.replace('-', ' ').title()}"
-		frappe.rename_doc(self.doctype, self.name, title_with_branch)
 
 	def _process_pull_requests(self):
 		for number, data in self.titles.items():
@@ -165,11 +221,38 @@ class Release(Document):
 		self.refresh_doc_on_desk()
 
 	@property
+	@functools.lru_cache()
+	def matching_refs(self):
+		response = requests.get(
+			f"https://api.github.com/repos/{self.parsed.owner}/{self.parsed.name}/git/matching-refs/",
+			headers={
+				"Authorization": f"token {self.settings.get_password('github_auth_token')}",
+				"accept": "application/vnd.github.v3+json",
+			},
+		)
+		if response.ok:
+			return response.json()
+
+	@property
+	@functools.lru_cache()
+	def tags(self):
+		response = requests.get(
+			f"https://api.github.com/repos/{self.parsed.owner}/{self.parsed.name}/tags",
+			headers={
+				"Authorization": f"token {self.settings.get_password('github_auth_token')}",
+				"accept": "application/vnd.github.v3+json",
+			},
+		)
+		if response.ok:
+			return response.json()
+
+	@property
 	def pending_pull_requests_to_stable(self):
 		return not requests.get(
 			f"https://api.github.com/repos/{self.parsed.owner}/{self.parsed.name}/pulls?base={self.stable_branch}",
 			headers={
-				"Authorization": f"token {self.settings.get_password('github_auth_token')}"
+				"Authorization": f"token {self.settings.get_password('github_auth_token')}",
+				"accept": "application/vnd.github.v3+json",
 			},
 		).json()
 
@@ -189,28 +272,18 @@ class Release(Document):
 		return parse(self.git_url)
 
 	@property
-	def local_clone(self):
-		return os.path.join(self.settings.clones_directory, self.parsed.name)
-
-	def clone_repo(self):
-		git.Repo.clone_from(self.git_url, self.local_clone)
-
-	@property
-	def repo(self):
-		return git.Git(self.local_clone)
-
-	def fetch_remotes(self):
-		self.repo.fetch(remote, self.stable_branch)
-		self.repo.fetch(remote, self.pre_release_branch)
-		Release.titles.fget.cache_clear()
-
-	@property
 	def commits(self):
 		response = requests.get(
-			f"https://api.github.com/repos/frappe/frappe/compare/{self.stable_branch}...{self.pre_release_branch}"
+			f"https://api.github.com/repos/frappe/frappe/compare/{self.stable_branch}...{self.pre_release_branch}",
+			headers={
+				"Authorization": f"token {self.settings.get_password('github_auth_token')}",
+				"accept": "application/vnd.github.v3+json",
+			},
 		)
-		if response.ok:
-			updated_set = set([x["commit"]["message"] for x in response.json()["commits"]])
+		if not response.ok:
+			response.raise_for_status()
+
+		updated_set = set([x["commit"]["message"] for x in response.json()["commits"]])
 
 		if hasattr(self, "_commits") and updated_set != self._commits:
 			Release.titles.fget.cache_clear()
@@ -246,7 +319,7 @@ class Release(Document):
 		"""Retreives PR titles dict using release.pull_requests from GitHub
 
 		Returns:
-		        dict: PR number as the key and dict of PR title and GitHub link as the value
+			dict: PR number as the key and dict of PR title and GitHub link as the value
 		"""
 		titles = {}
 		organization = self.parsed.owner
@@ -259,7 +332,10 @@ class Release(Document):
 
 			res = requests.get(
 				f"https://api.github.com/repos/{organization}/{repo_name}/pulls/{pull_number}",
-				headers={"Authorization": f"token {authorization_token}"},
+				headers={
+					"Authorization": f"token {authorization_token}",
+					"accept": "application/vnd.github.v3+json",
+				},
 			)
 			if not res.ok:
 				continue
