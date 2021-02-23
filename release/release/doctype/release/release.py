@@ -206,13 +206,11 @@ class Release(Document):
 
 	@property
 	def commits(self):
-		updated_set = set(
-			self.repo.log(
-				f"{remote}/{self.stable_branch}..{remote}/{self.pre_release_branch}",
-				r"--pretty=format:%s",
-				"--abbrev-commit",
-			).split("\n")
+		response = requests.get(
+			f"https://api.github.com/repos/frappe/frappe/compare/{self.stable_branch}...{self.pre_release_branch}"
 		)
+		if response.ok:
+			updated_set = set([x["commit"]["message"] for x in response.json()["commits"]])
 
 		if hasattr(self, "_commits") and updated_set != self._commits:
 			Release.titles.fget.cache_clear()
