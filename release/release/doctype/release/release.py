@@ -67,14 +67,15 @@ class Release(Document):
 
 	def raise_pr_for_release(self):
 		self.create_bump_commit_on_pre_release()
-		self.merge_pre_release_into_stable()
+		self.raise_pre_release_into_stable()
 
-	def merge_pre_release_into_stable(self):
+	def raise_pre_release_into_stable(self):
 		if self.raised_pr_for_release:
 			return
 
 		data = {
 			"title": f"chore: Merge {self.pre_release_branch} into {self.stable_branch}",
+			"body": "### TODO\n- [ ] Add release notes",
 			"head": self.pre_release_branch,
 			"base": self.stable_branch,
 			"maintainer_can_modify": True,
