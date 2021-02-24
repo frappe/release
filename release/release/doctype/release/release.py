@@ -90,7 +90,8 @@ class Release(Document):
 		)
 		self._response = response
 		if response.ok:
-			frappe.msgprint(f"PR raised: {response.json()['html_url']}")
+			pr_link = response.json()['html_url']
+			frappe.msgprint(f"PR raised: <a href='{pr_link}'>{pr_link}</a>")
 		else:
 			try:
 				message = response.json()["message"]
