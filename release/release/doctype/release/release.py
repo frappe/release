@@ -64,7 +64,7 @@ class Release(Document):
 
 	def on_submit(self):
 		self.create_draft_release()
-
+	@frappe.whitelist()
 	def raise_pr_for_release(self):
 		self.create_bump_commit_on_pre_release()
 		self.raise_pre_release_into_stable()
