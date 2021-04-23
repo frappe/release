@@ -223,10 +223,12 @@ class Release(Document):
 			if not response.ok:
 				frappe.throw(f"Branch {branch} does not exist on {self.git_url}")
 
+	@frappe.whitelist()
 	def reset_release_info(self):
 		self.set_release_info()
 		self.save()
 
+	@frappe.whitelist()
 	def process_pull_requests(self):
 		self.status = "Processing PRs"
 		self.save()
