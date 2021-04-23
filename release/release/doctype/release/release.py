@@ -18,7 +18,7 @@ remote = "origin"
 ignore_pr_type = ("chore", "bump")
 as_md = True  # changes titles, export formats
 skip_backports = False
-backport_identifiers = ("mergify/bp", "(bp #")
+backport_identifiers = ("mergify/bp", "(bp #", "(backport #")
 
 # todo: make git_url, stable and pre release branch set only once -- maybe not...
 
